@@ -19,16 +19,16 @@
 - **트러블슈팅 로그**: 문제가 발생했을 때, 어떻게 원인을 파악했고 대안을 선택했는지 논리적으로 기술합니다.
 
 ## 🎯 4. 코드 구현 원칙 (Implementation Rules)
-- **최신 모델 고수**: `gemini-3-flash` (LLM)와 `text-embedding-004` (Embedding)를 사용합니다.
+- **최신 모델 고수**: `gemini-2.5-flash` (LLM)와 `gemini-embedding-001` (Embedding)를 사용합니다.
 - **UI/UX Excellence**: Streamlit의 기본 기능을 넘어, 프리미엄한 디자인 감각을 유지합니다. (가독성 높은 폰트, 적절한 색상 대비, 마이크로 애니메이션 등)
 - **모듈화**: 비즈니스 로직(src/)과 실행부(main.py)를 명석하게 분리합니다.
 
 ## 📋 5. 실행 가이드 (Quick Start)
-| 작업 | 명령어 |
-| :--- | :--- |
-| **애플리케이션 실행** | `uv run main.py` |
-| **의존성 업데이트** | `uv add <package>` |
-| **코드 기록 확인** | `view_file HISTORY.md` |
+| 작업                  | 명령어                 |
+| :-------------------- | :--------------------- |
+| **애플리케이션 실행** | `uv run main.py`       |
+| **의존성 업데이트**   | `uv add <package>`     |
+| **코드 기록 확인**    | `view_file HISTORY.md` |
 
 ---
 *최종 업데이트: 2026-04-12 15:58*
