@@ -17,10 +17,10 @@ load_dotenv()
 
 # --- [초기 설정] ---
 # 모델 초기화 (누락된 chat 객체 추가)
-chat = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
+chat = ChatGoogleGenerativeAI(model="gemini-3-flash")
 
 embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/gemini-embedding-001",
+    model="models/text-embedding-004",
     transport='rest' # Streamlit 환경에서의 호환성 및 안정성을 위해 설정
 )
 db_path = "faiss_index_pdf_quiz"
@@ -63,7 +63,7 @@ def get_vectorstore():
 
 st.session_state.vectorstore = get_vectorstore()
 
-def load_and_parse_pdf(pdf_path):
+def load_and_parse_pdf(pdf_path: str) -> None:
     # (주의: embeddings, db_path 등은 scaffold의 전역 변수나 세션 상태를 활용한다고 가정)
     # 1. PDF 로드 (하나의 객체로 로드됨)
     loader = PyMuPDFLoader(pdf_path)
@@ -100,7 +100,7 @@ def search_pdf_documents(query: str) -> str:
         return "\n\n".join([doc.page_content for doc in docs])
     return "검색할 문서가 없습니다."
 
-def initialize_agent():
+def initialize_agent() -> None:
     # (주의: search_pdf_documents 등은 scaffold의 전역 변수 활용 가정)
     system_prompt = """당신은 업로드된 PDF 문서를 바탕으로 학습을 돕는 교육 전문가입니다.
     1. 사용자의 질문에 대해 'search_pdf_documents' 도구를 사용하여 정확한 정보를 찾으세요.
@@ -109,12 +109,12 @@ def initialize_agent():
     """
     
     st.session_state.agent = create_agent(
-        model="google_genai:gemini-2.5-flash",
+        model="google_genai:gemini-3-flash",
         tools=[search_pdf_documents],
         system_prompt=system_prompt
     )
 
-def general_response(user_message):
+def general_response(user_message: str) -> str:
     """에이전트를 통한 일반 대화"""
     if st.session_state.agent:
         history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-5:]]
@@ -133,7 +133,7 @@ def general_response(user_message):
         return content
     return "에이전트가 설정되지 않았습니다."
 
-def question_generator():
+def question_generator() -> dict | None:
     # (주의: chat, st.session_state.pdf_context 등은 scaffold의 전역/세션 변수 활용 가정)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """당신은 제공된 텍스트에서 4지선다 객관식 문제를 생성하는 교육용 AI입니다.
@@ -160,7 +160,7 @@ def question_generator():
     # Scaffold에 제공된 parse_ai_json 함수를 사용하여 JSON 추출 및 결과 반환
     return parse_ai_json(content)
 
-def check_answer(user_message):
+def check_answer(user_message: str) -> str | None:
     """사용자가 입력한 숫자가 정답인지 확인"""
     q_data = st.session_state.current_question
     if not q_data: return None
