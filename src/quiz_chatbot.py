@@ -56,9 +56,13 @@ def parse_ai_json(ai_response):
 
 @st.cache_resource
 def get_vectorstore():
-    """FAISS 저장소가 있으면 로드합니다."""
+    """FAISS 저장소가 있으면 로드합니다. 모델 변경 등으로 로드 실패 시 예외 처리합니다."""
     if os.path.exists(db_path):
-        return FAISS.load_local(db_path, embeddings, allow_dangerous_deserialization=True)
+        try:
+            return FAISS.load_local(db_path, embeddings, allow_dangerous_deserialization=True)
+        except Exception as e:
+            st.error(f"기존 인덱스 로드 실패(모델 차원 불일치 등): {e}")
+            st.warning("새로운 PDF를 업로드하여 인덱스를 재생성해 주세요.")
     return None
 
 st.session_state.vectorstore = get_vectorstore()

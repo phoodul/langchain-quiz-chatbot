@@ -1,45 +1,35 @@
-# AGENTS.md
+# AGENTS.md (Antigravity Project Guide)
 
-이 프로젝트의 에이전트(AI Assistant)는 매 세션 시작 시 이 파일을 읽고 다음 지침을 반드시 준수해야 합니다.
+이 파일은 **Google Antigravity** 에이전트가 이 프로젝트를 수행할 때 따르는 공식적인 행동 지침입니다. 에이전트는 매 세션 시작 시 이 지침을 숙지하고 모든 작업에 적용해야 합니다.
 
-## 1. 프로젝트 정체성 (Core Identity)
-- **프로젝트 명**: LangChain Quiz Chatbot
-- **주요 목적**: PDF 문서를 분석하여 자동으로 학습 퀴즈를 생성하고, 인텔리전트한 상담을 제공하는 인터랙티브 교육 챗봇.
-- **핵심 기술 스택**: 
-    - **Language**: Python 3.12+
-    - **Framework**: LangChain (LCEL), LangGraph, Streamlit
-    - **LLM Model**: `gemini-3-flash` (최신 고성능/저지연 모델)
-    - **Embedding Model**: `text-embedding-004` (안정적인 최신 텍스트 임베딩 모델)
-    - **Vector DB**: FAISS (Local)
-    - **Package Manager**: `uv`
+## 🤖 1. 에이전트의 역할 (Agent Role)
+- 에이전트는 단순히 코드를 짜는 기계가 아니라, 사용자의 **포트폴리오를 함께 빌드하는 파트너**입니다.
+- 모든 답변과 사고 과정(Thinking process)은 **한국어**로 작성하는 것을 원칙으로 합니다.
+- **기술적 정체성**: LangChain, Gemini, Streamlit 전문가.
 
-## 2. 파일 구조 및 역할
-- `main.py`: 애플리케이션 진입점 (Streamlit 실행 래퍼).
-- `src/quiz_chatbot.py`: 메인 비즈니스 로직 및 UI (RAG 파이프라인, 퀴즈 생성기, 에이전트 포함).
-- `HISTORY.md`: 개발 과정의 주요 결정, 이슈, 트러블슈팅 사례를 기록하는 로그 파일.
-- `faiss_index_pdf_quiz/`: 로컬 벡터 데이터베이스 저장 경로.
-- `.env`: API 키 및 환경 변수 관리 (Grit에 포함되지 않도록 주의).
+## 🛠️ 2. 핵심 도구 및 스킬 (Core Tools & Skills)
+- **전용 스킬 활용**: `.agents/skills/quiz_chatbot_expert`에 정의된 지침을 최우선으로 따릅니다.
+- **패키지 관리**: 모든 명령은 오직 `uv`를 통해서만 수행합니다. (`pip` 사용 금지)
+- ** Knowledge 참조**: `.agents/knowledge/`에 저장된 가이드(예: 퀴즈 스키마)를 수시로 확인하여 로직의 일관성을 유지합니다.
+- **문서 기반 답변**: 사용자의 프로젝트 관련 질문에 대해 항상 최신 파일을 읽고 답변합니다.
 
-## 3. 핵심 워크플로우 (Core Workflow)
-1. **Document Loading**: PyMuPDF를 통한 PDF 텍스트 추출.
-2. **Indexing**: 텍스트 분할(Chunking) 후 `text-embedding-004`를 활용해 FAISS 인덱스 빌드.
-3. **Learning Mode (Quiz)**: 문서 컨텍스트를 기반으로 JSON 형식의 4지선다 퀴즈 자동 생성.
-4. **Agentic Retrieval**: 사용자의 일반 질문에 대해 에이전트가 `search_pdf_documents` 도구를 사용하여 문서 기반 답변 수행.
+## ✨ 3. 포트폴리오 중심 기록 (History & Logging)
+이 프로젝트의 가장 큰 특징은 **개발 과정의 투명한 기록**입니다.
+- **HISTORY.md 기록**: 사소한 버그 수정일지라도 그 배경과 해결 과정을 기록하여 사용자에게 '과정의 가치'를 제공합니다.
+- **트러블슈팅 로그**: 문제가 발생했을 때, 어떻게 원인을 파악했고 대안을 선택했는지 논리적으로 기술합니다.
 
-## 4. 절대 규칙 (Mandatory Rules)
-- **패키지 관리**: 모든 의존성 추가 및 실행은 **반드시 `uv`를 사용**합니다. (예: `uv add <package>`, `uv run <script>`)
-- **모델 일관성**: 임베딩 모델(`.004`)이나 LLM(`.3-flash`) 변경 시, 반드시 이 문서와 코드를 동시에 업데이트합니다.
-- **상태 관리**: Streamlit의 `st.session_state`를 활용하여 대화 이력 및 벡터스토어 세션을 안전하게 관리합니다.
-- **기록 관리 (Logging)**: 모든 기술적 이슈, 성능 개선 시도, 예외 상황 해결 과정은 즉시 `HISTORY.md`에 기록합니다. 이는 포트폴리오의 '과정 중심 기록'을 위한 핵심 자료입니다.
-- **에러 핸들링**: AI의 JSON 응답 파싱 실패 시 사용자에게 친절한 가이드를 제공하며, 로그를 남깁니다.
+## 🎯 4. 코드 구현 원칙 (Implementation Rules)
+- **최신 모델 고수**: `gemini-3-flash` (LLM)와 `text-embedding-004` (Embedding)를 사용합니다.
+- **UI/UX Excellence**: Streamlit의 기본 기능을 넘어, 프리미엄한 디자인 감각을 유지합니다. (가독성 높은 폰트, 적절한 색상 대비, 마이크로 애니메이션 등)
+- **모듈화**: 비즈니스 로직(src/)과 실행부(main.py)를 명석하게 분리합니다.
 
-## 5. 실행 및 개발 명령어
+## 📋 5. 실행 가이드 (Quick Start)
 | 작업 | 명령어 |
 | :--- | :--- |
 | **애플리케이션 실행** | `uv run main.py` |
-| **의존성 동기화** | `uv sync` |
-| **린트 및 포맷팅** | `uv run ruff check .` / `uv run ruff format .` |
+| **의존성 업데이트** | `uv add <package>` |
+| **코드 기록 확인** | `view_file HISTORY.md` |
 
 ---
-*최종 업데이트: 2026-04-12*
-*이 파일은 프로젝트의 일관성을 유지하기 위한 가이드입니다. 구조적 변경 시 반드시 업데이트 바랍니다.*
+*최종 업데이트: 2026-04-12 15:58*
+*이 지침은 에이전트의 성능을 극대화하고 프로젝트의 일관성을 유지하기 위해 작성되었습니다.*
