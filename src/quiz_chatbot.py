@@ -17,11 +17,11 @@ load_dotenv()
 
 # --- [초기 설정] ---
 # 모델 초기화 (누락된 chat 객체 추가)
-chat = ChatGoogleGenerativeAI(model="gemini-3-flash")
+chat = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
 embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/text-embedding-004",
-    transport='rest' # Streamlit 환경에서의 호환성 및 안정성을 위해 설정
+    model="models/gemini-embedding-001",
+    task_type="RETRIEVAL_DOCUMENT",
 )
 db_path = "faiss_index_pdf_quiz"
 
@@ -43,29 +43,35 @@ if "agent" not in st.session_state:
 if "mode" not in st.session_state:
     st.session_state.mode = "퀴즈 풀기"
 
+
 # --- [유틸리티 함수: 스캐폴딩 제공] ---
 def parse_ai_json(ai_response):
     """AI 응답에서 JSON 부분을 추출하여 파싱합니다."""
     try:
-        json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+        json_match = re.search(r"\{.*\}", ai_response, re.DOTALL)
         if json_match:
             return json.loads(json_match.group(0))
     except Exception as e:
         st.error(f"JSON 파싱 오류: {e}")
     return None
 
+
 @st.cache_resource
 def get_vectorstore():
     """FAISS 저장소가 있으면 로드합니다. 모델 변경 등으로 로드 실패 시 예외 처리합니다."""
     if os.path.exists(db_path):
         try:
-            return FAISS.load_local(db_path, embeddings, allow_dangerous_deserialization=True)
+            return FAISS.load_local(
+                db_path, embeddings, allow_dangerous_deserialization=True
+            )
         except Exception as e:
             st.error(f"기존 인덱스 로드 실패(모델 차원 불일치 등): {e}")
             st.warning("새로운 PDF를 업로드하여 인덱스를 재생성해 주세요.")
     return None
 
+
 st.session_state.vectorstore = get_vectorstore()
+
 
 def load_and_parse_pdf(pdf_path: str) -> None:
     # (주의: embeddings, db_path 등은 scaffold의 전역 변수나 세션 상태를 활용한다고 가정)
@@ -77,19 +83,32 @@ def load_and_parse_pdf(pdf_path: str) -> None:
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     split_docs = text_splitter.split_documents(docs)
 
-    # 3. 벡터스토어 생성 및 로컬 저장
-    st.session_state.vectorstore = FAISS.from_documents(split_docs, embeddings)
+    # 3. 벡터스토어 생성 및 로컬 저장 (안전한 개별 임베딩 방식 사용)
+    with st.spinner("벡터 데이터 생성 중..."):
+        texts = [doc.page_content for doc in split_docs]
+        metadatas = [doc.metadata for doc in split_docs]
+
+        # 모델의 배치 처리 버그 대응을 위해 개별 임베딩 수행
+        embedded_docs = [embeddings.embed_query(text) for text in texts]
+
+        st.session_state.vectorstore = FAISS.from_embeddings(
+            text_embeddings=zip(texts, embedded_docs),
+            embedding=embeddings,
+            metadatas=metadatas,
+        )
+
     st.session_state.vectorstore.save_local(db_path)
-    
+
     # 캐시 초기화 (새로운 PDF가 로드되면 캐시된 벡터스토어를 지워야 함)
     get_vectorstore.clear()
-    
+
     # 전체 컨텍스트 저장 (퀴즈 생성용)
     st.session_state.pdf_context = "\n".join([doc.page_content for doc in docs])
 
+
 @tool
 def search_pdf_documents(query: str) -> str:
-    """업로드된 PDF 문서 내에서 정보를 검색합니다. 
+    """업로드된 PDF 문서 내에서 정보를 검색합니다.
     사실 확인이나 전문적인 내용이 필요할 때 사용하세요.
     """
     # st.session_state에서 안전하게 vectorstore를 가져옵니다.
@@ -97,12 +116,13 @@ def search_pdf_documents(query: str) -> str:
     vectorstore = st.session_state.get("vectorstore")
     if vectorstore is None:
         vectorstore = get_vectorstore()
-        
+
     if vectorstore is not None:
         # 벡터스토어에서 유사도 검색 수행 (k=3)
         docs = vectorstore.similarity_search(query, k=3)
         return "\n\n".join([doc.page_content for doc in docs])
     return "검색할 문서가 없습니다."
+
 
 def initialize_agent() -> None:
     # (주의: search_pdf_documents 등은 scaffold의 전역 변수 활용 가정)
@@ -111,36 +131,50 @@ def initialize_agent() -> None:
     2. 답변은 반드시 검색된 문서의 내용에만 기반하여 한국어로 작성하세요.
     3. 문서에 관련 내용이 없다면 억지로 꾸며내지 말고 솔직하게 모른다고 답변하세요.
     """
-    
+
     st.session_state.agent = create_agent(
-        model="google_genai:gemini-3-flash",
+        model="google_genai:gemini-2.5-flash",
         tools=[search_pdf_documents],
-        system_prompt=system_prompt
+        system_prompt=system_prompt,
     )
+
 
 def general_response(user_message: str) -> str:
     """에이전트를 통한 일반 대화"""
     if st.session_state.agent:
-        history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-5:]]
+        history = [
+            {"role": m["role"], "content": m["content"]}
+            for m in st.session_state.messages[-5:]
+        ]
         # 에이전트 실행
-        result = st.session_state.agent.invoke({"messages": history + [{"role": "user", "content": user_message}]})
-        
+        result = st.session_state.agent.invoke(
+            {"messages": history + [{"role": "user", "content": user_message}]}
+        )
+
         # 마지막 AI 메시지 추출
         ai_msg = result["messages"][-1]
         content = ai_msg.content
-        
+
         # 응답이 리스트 형태(구조화된 데이터)인 경우 텍스트 블록만 추출
         if isinstance(content, list):
-            text_parts = [part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text"]
+            text_parts = [
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            ]
             return "".join(text_parts)
-        
+
         return content
     return "에이전트가 설정되지 않았습니다."
 
+
 def question_generator() -> dict | None:
     # (주의: chat, st.session_state.pdf_context 등은 scaffold의 전역/세션 변수 활용 가정)
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """당신은 제공된 텍스트에서 4지선다 객관식 문제를 생성하는 교육용 AI입니다.
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """당신은 제공된 텍스트에서 4지선다 객관식 문제를 생성하는 교육용 AI입니다.
         반드시 다음 JSON 형식으로만 응답하세요:
         {{
             "question": "문제 내용",
@@ -149,28 +183,38 @@ def question_generator() -> dict | None:
             "explanation": "해설"
         }}
         
-        텍스트: {context}"""),
-        ("human", "문제를 1개 생성해 주세요.")
-    ])
-    
+        텍스트: {context}""",
+            ),
+            ("human", "문제를 1개 생성해 주세요."),
+        ]
+    )
+
     chain = prompt | chat
     ai_response = chain.invoke({"context": st.session_state.pdf_context})
     content = ai_response.content
-    
+
     # 리스트 형태(구조화된 데이터)일 경우 텍스트 부분만 합치기
     if isinstance(content, list):
-        content = "".join([part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text"])
-    
+        content = "".join(
+            [
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            ]
+        )
+
     # Scaffold에 제공된 parse_ai_json 함수를 사용하여 JSON 추출 및 결과 반환
     return parse_ai_json(content)
+
 
 def check_answer(user_message: str) -> str | None:
     """사용자가 입력한 숫자가 정답인지 확인"""
     q_data = st.session_state.current_question
-    if not q_data: return None
+    if not q_data:
+        return None
     try:
         user_ans = int(user_message.strip())
-        correct_ans = int(q_data['answer'])
+        correct_ans = int(q_data["answer"])
         if user_ans == correct_ans:
             return "정답입니다! 🎉"
         else:
@@ -179,6 +223,7 @@ def check_answer(user_message: str) -> str | None:
             return f"오답입니다. 정답은 {correct_ans}번입니다.\n\n해설: {q_data['explanation']}"
     except ValueError:
         return None
+
 
 # --- Streamlit UI 시작 ---
 st.title("📖 PDF AI 퀴즈 챗봇")
@@ -189,9 +234,9 @@ with st.sidebar:
     st.session_state.mode = st.radio(
         "학습 모드 선택",
         ["퀴즈 풀기", "질문하기"],
-        help="퀴즈를 풀며 학습하거나, 문서에 대해 자유롭게 질문하세요."
+        help="퀴즈를 풀며 학습하거나, 문서에 대해 자유롭게 질문하세요.",
     )
-    
+
     if st.session_state.wrong_answers:
         st.write("---")
         st.write(f"❌ 틀린 문제: {len(st.session_state.wrong_answers)}개")
@@ -204,20 +249,25 @@ if st.button("학습 시작") and uploaded_file:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         tmp_file.write(uploaded_file.read())
         tmp_path = tmp_file.name
-    
+
     with st.spinner("문서를 분석 중..."):
         load_and_parse_pdf(tmp_path)
         initialize_agent()
         st.session_state.pdf_processed = True
-        
+
         if st.session_state.mode == "퀴즈 풀기":
             q = question_generator()
             st.session_state.current_question = q
             if q:
-                msg = q['question'] + "\n\n" + "\n".join(q['options'])
+                msg = q["question"] + "\n\n" + "\n".join(q["options"])
                 st.session_state.messages.append({"role": "assistant", "content": msg})
         else:
-            st.session_state.messages.append({"role": "assistant", "content": "문서 분석이 완료되었습니다! 분석된 내용에 대해 무엇이든 물어보세요."})
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": "문서 분석이 완료되었습니다! 분석된 내용에 대해 무엇이든 물어보세요.",
+                }
+            )
     os.unlink(tmp_path)
 
 # 대화 창 출력
@@ -233,7 +283,8 @@ if prompt := st.chat_input("메시지를 입력하세요"):
         st.stop()
 
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"): st.write(prompt)
+    with st.chat_message("user"):
+        st.write(prompt)
 
     with st.chat_message("assistant"):
         if st.session_state.mode == "퀴즈 풀기":
@@ -241,21 +292,27 @@ if prompt := st.chat_input("메시지를 입력하세요"):
             ans_check = check_answer(prompt)
             if ans_check:
                 st.write(ans_check)
-                st.session_state.messages.append({"role": "assistant", "content": ans_check})
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": ans_check}
+                )
                 # 다음 문제 출제
                 with st.spinner("다음 문제를 생성 중..."):
                     new_q = question_generator()
                     st.session_state.current_question = new_q
                     if new_q:
-                        msg = new_q['question'] + "\n\n" + "\n".join(new_q['options'])
+                        msg = new_q["question"] + "\n\n" + "\n".join(new_q["options"])
                         st.write("---")
                         st.write(msg)
-                        st.session_state.messages.append({"role": "assistant", "content": msg})
+                        st.session_state.messages.append(
+                            {"role": "assistant", "content": msg}
+                        )
             else:
                 # 입력이 번호가 아닌 경우 가이드 출력
                 guide = "퀴즈 풀기 모드입니다. 정답 번호(1~4)를 입력해 주세요. 문질문에 답변을 듣고 싶다면 사이드바에서 '질문하기' 모드로 변경해 주세요."
                 st.info(guide)
-                st.session_state.messages.append({"role": "assistant", "content": guide})
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": guide}
+                )
         else:
             # 질문하기 모드: 에이전트를 통한 일반 답변 생성
             with st.spinner("답변을 찾는 중..."):

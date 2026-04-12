@@ -4,7 +4,7 @@
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![LangChain](https://img.shields.io/badge/Framework-LangChain-green.svg)](https://python.langchain.com/)
-[![Gemini](https://img.shields.io/badge/Model-Gemini%203%20Flash-orange.svg)](https://deepmind.google/technologies/gemini/)
+[![Gemini](https://img.shields.io/badge/Model-Gemini%202.5%20Flash-orange.svg)](https://deepmind.google/technologies/gemini/)
 [![uv](https://img.shields.io/badge/Package%20Manager-uv-purple.svg)](https://github.com/astral-sh/uv)
 
 ---
@@ -41,14 +41,14 @@
 graph TD
     A[PDF Upload] --> B[PyMuPDF Text Extraction]
     B --> C[Recursive Text Splitting]
-    C --> D[Text-Embedding-004]
+    C --> D[Gemini-Embedding-001]
     D --> E[(FAISS Vector DB)]
     
     subgraph Conversation_Engine
         F[User Query] --> G{Mode Check}
         G -- Quiz Mode --> H[Prompt for JSON Quiz]
         G -- Q&A Mode --> I[RAG Retrieval Tool]
-        H --> J[Gemini-3-Flash]
+        H --> J[Gemini-2.5-Flash]
         I --> J
     end
     
@@ -62,8 +62,8 @@ graph TD
 
 - **Language**: `Python 3.12+` (최신 언어 기능 및 타입 힌트 활용)
 - **Package Manager**: `uv` (pip 대비 압도적인 설치 속도와 예측 가능한 가상환경 관리)
-- **LLM**: `Gemini 3 Flash` (멀티모달 이해력과 빠른 응답 속도, 합리적인 API 비용)
-- **Embedding**: `Text-Embedding-004` (Gemini 생태계 최적화 및 768차원의 고성능 검색)
+- **LLM**: `Gemini 2.5 Flash` (멀티모달 이해력과 빠른 응답 속도, 합리적인 API 비용)
+- **Embedding**: `Gemini Embedding 001` (정식 출시된 안정적인 텍스트 임베딩 모델)
 - **Vector DB**: `FAISS` (경량화된 로컬 인덱싱으로 서버 리소스 최소화)
 - **Framework**: `LangChain (LCEL)` (체인 구조를 통한 유연한 프롬프트 파이프라인 설계)
 

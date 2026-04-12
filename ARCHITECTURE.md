@@ -8,14 +8,14 @@
 graph TD
     A[PDF Upload] --> B[PyMuPDF Text Extraction]
     B --> C[Recursive Text Splitting]
-    C --> D[Text-Embedding-004]
+    C --> D[Gemini-Embedding-001]
     D --> E[(FAISS Vector DB)]
     
     subgraph Conversation_Engine
         F[User Query] --> G{Mode Check}
         G -- Quiz Mode --> H[Prompt for JSON Quiz]
         G -- Q&A Mode --> I[RAG Retrieval Tool]
-        H --> J[Gemini-3-Flash]
+        H --> J[Gemini-2.5-Flash]
         I --> J
     end
     
@@ -27,8 +27,8 @@ graph TD
 - **Frontend**: Streamlit 기반 웹 인터페이스
 - **Orchestration**: LangChain (LCEL) 기반의 RAG 파이프라인
 - **AI Models**: 
-  - LLM: `gemini-3-flash`
-  - Embedding: `text-embedding-004`
+  - LLM: `gemini-2.5-flash`
+  - Embedding: `gemini-embedding-001`
 - **Data Store**: 로컬 FAISS 인덱스 (`faiss_index_pdf_quiz/`)
 
 ## 🛠️ Module Structure

@@ -11,7 +11,7 @@
   - 논리적 문맥 보존을 위해 문장 단위 분할을 선호합니다.
 
 ## 2. Embedding & Vector DB
-- **Embedding Model**: `text-embedding-004` (Google Generative AI)
+- **Embedding Model**: `gemini-embedding-001` (정식 출시된 안정적인 텍스트 임베딩 모델)
 - **Vector DB**: `FAISS` (Local 기반)
 - **데이터 보존**: 인덱싱 후 `faiss_index_pdf_quiz` 폴더에 로컬 저장하여 세션 간 재사용을 보장합니다.
 

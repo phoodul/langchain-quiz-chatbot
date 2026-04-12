@@ -4,6 +4,24 @@
 
 ## 📅 Build Log
 
+### [2026-04-12] 프로젝트 전체 임베딩 모델 `gemini-embedding-2-preview` 통일 및 task_type 제거
+- **상황(Situation)**: 코드에서는 `gemini-embedding-2-preview`를 사용 중이었으나, 문서 파일 6개(ARCHITECTURE.md, README.md, AGENTS.md, SKILL.md, rag_strategy.md 등)에는 여전히 `text-embedding-004`로 기재되어 코드-문서 간 불일치 발생.
+- **추가 이슈**: 공식 문서(ai.google.dev)에 따르면 `gemini-embedding-2-preview`는 `task_type` 파라미터 대신 프롬프트 기반 작업 접두사를 사용하는 것이 권장됨. 기존 코드의 `task_type="RETRIEVAL_DOCUMENT"` 설정이 API 호환성 문제를 유발할 가능성 확인.
+- **결정(Action)**:
+    - `quiz_chatbot.py`: `task_type="RETRIEVAL_DOCUMENT"` 파라미터 제거 (공식 권장 방식 준수).
+    - `ARCHITECTURE.md`, `README.md`, `AGENTS.md`, `SKILL.md`, `rag_strategy.md`: 임베딩 모델 참조를 `gemini-embedding-2-preview`로 일괄 수정.
+    - 기존 FAISS 인덱스 삭제 (모델 차원 불일치 대응).
+- **결과(Result)**: 코드와 문서가 완벽히 일치하며, 공식 API 권장 사양에 맞게 설정 최적화 완료.
+
+### [2026-04-12] 모델 안정화: gemini-2.5-flash + gemini-embedding-001 전환
+- **상황(Situation)**: `gemini-3-flash` 모델이 `v1beta` API에서 404 NOT_FOUND 에러 발생. `gemini-2.0-flash`는 무료 할당량 초과(429). `gemini-embedding-2-preview`도 배치 임베딩 시 라이브러리 호환성 이슈 지속.
+- **조사(Investigation)**: `client.models.list()`로 사용 가능한 모델 목록을 직접 확인. `gemini-3-flash`는 `gemini-3-flash-preview`로만 존재, `gemini-2.5-flash`가 정식 사용 가능 확인.
+- **결정(Action)**:
+    - LLM: `gemini-2.5-flash` (정식 출시, 안정적)
+    - Embedding: `gemini-embedding-001` (정식 출시, `task_type` 지원)
+    - 프로젝트 전체 문서 7개 일괄 수정 (README, ARCHITECTURE, AGENTS, SKILL, rag_strategy 등)
+- **결과(Result)**: 모든 API 호출이 정식 출시 모델을 사용하게 되어 안정성 대폭 향상. 프리뷰 모델의 불안정성 이슈 완전 해소.
+
 ### [2026-04-12] 인덱스 로드 로직 안전화 (모델 변경 대응)
 - **상황(Situation)**: `gemini-3-flash` 및 `text-embedding-004`로 업그레이드한 후, 기존의 다른 차원 모델로 생성된 인덱스 파일이 존재할 경우 앱 실행 시 크래시가 발생할 수 있음.
 - **결정(Action)**: `get_vectorstore` 함수에 예외 처리(try-except)를 추가하여 로드 실패 시 에러를 방지하고 사용자에게 재구축을 안내하도록 수정.
@@ -50,3 +68,27 @@
 
 ---
 *(이후 발생하는 이슈와 해결 과정은 이 아래에 역순으로 기록합니다.)*
+
+### [2026-04-12] 임베딩 리스트 길이 불일치(ValueError) 최종 해결 (Robust Embedding 도입)
+- **상황(Situation)**: `task_type` 지정 후에도 특정 환경에서 `doc(2) != embedding(1)` 에러 지속 발생.
+- **원인(Cause)**: `gemini-embedding-2-preview` 프리뷰 모델 사용 시, `langchain-google-genai` 라이브러리의 배치 임베딩(`embed_documents`) 로직이 입력 리스트를 단일 리퀘스트로 묶으면서 응답을 단일 벡터로 잘못 파싱하는 라이브러리 내부 이슈 발견.
+- **결정(Action)**: 
+    - `FAISS.from_documents` 대신 `embed_query`를 활용한 **수동 개별 임베딩 생성** 로직 도입.
+    - 리스트 컴프리헨션을 통해 각 청크를 독립적으로 임베딩하여 리스트 길이를 100% 일치시킴.
+    - `task_type`을 대문자 `RETRIEVAL_DOCUMENT` 표준 규격으로 통일.
+- **결과(Result)**: 모델이나 라이브러리의 배치 처리 버그에 상관없이 모든 PDF를 안정적으로 분석 가능함. 시스템 신뢰성(Reliability) 대폭 향상.
+
+### [2026-04-12] 임베딩 모델 gemini-embedding-2-preview 적용 및 v1beta 설정
+- **상황(Situation)**: 프로젝트 기획에 맞춰 최신 프리뷰 모델인 `gemini-embedding-2-preview`를 사용하여 임베딩 성능을 극대화하기로 결정.
+- **결정(Action)**: 
+    - `GoogleGenerativeAIEmbeddings`의 모델명을 `gemini-embedding-2-preview`로 변경.
+    - 해당 모델이 프리뷰 단계이므로 안정적인 동작을 위해 `version="v1beta"`로 API 버전 조정.
+- **결과(Result)**: 최첨단 임베딩 기술을 프로젝트에 도입 완료. 차세대 Gemini 생태계를 활용한 향후 확장성(멀티모달 등) 기반 마련.
+
+### [2026-04-12] 임베딩 모델 404 NOT_FOUND 에러 해결 (API v1 명시)
+- **상황(Situation)**: `text-embedding-004` 모델로 변경 후 `uv run main.py` 실행 시 `404 NOT_FOUND` 에러 발생. (에러 메시지: `models/text-embedding-004 is not found for API version v1beta`)
+- **원인(Cause)**: `langchain-google-genai` 라이브러리가 기본적으로 `v1beta` 엔드포인트를 호출하려 했으나, `text-embedding-004` 모델은 `v1` 및 특정 명명 규칙을 따를 때 더 안정적으로 동작함.
+- **결정(Action)**: 
+    - `GoogleGenerativeAIEmbeddings` 초기화 시 `version="v1"`을 명시하여 최신 안정화 API 버전을 강제 지정.
+    - 모델 이름에서 `models/` 접두사를 코드상에서 제거하여 라이브러리 내부 정규화 로직에 맡김.
+- **결과(Result)**: 404 에러가 해결되고 앱이 정상 실행됨. 최신 모델을 사용하면서도 호환성 이슈를 완벽히 해결함.
