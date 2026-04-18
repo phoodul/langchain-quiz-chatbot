@@ -12,8 +12,15 @@ import json
 import re
 from dotenv import load_dotenv
 
-# .env 파일 로드
+# .env 파일 로드 (모듈 임포트 전 실행)
 load_dotenv()
+
+from guardrails import (
+    education_guardrail,
+    student_safety_middleware,
+    counseling_escalation_middleware,
+    answer_leakage_guardrail
+)
 
 # --- [초기 설정] ---
 # 모델 초기화 (누락된 chat 객체 추가)
@@ -136,6 +143,12 @@ def initialize_agent() -> None:
         model="google_genai:gemini-2.5-flash",
         tools=[search_pdf_documents],
         system_prompt=system_prompt,
+        middleware=[
+            education_guardrail,
+            student_safety_middleware,
+            counseling_escalation_middleware,
+            answer_leakage_guardrail
+        ]
     )
 
 

@@ -6,6 +6,7 @@
 [![LangChain](https://img.shields.io/badge/Framework-LangChain-green.svg)](https://python.langchain.com/)
 [![Gemini](https://img.shields.io/badge/Model-Gemini%202.5%20Flash-orange.svg)](https://deepmind.google/technologies/gemini/)
 [![uv](https://img.shields.io/badge/Package%20Manager-uv-purple.svg)](https://github.com/astral-sh/uv)
+[![Guardrails](https://img.shields.io/badge/Safety-4--Layer%20Guardrails-red.svg)](#-5-핵심-구현-상세-key-implementation)
 
 ---
 
@@ -31,6 +32,7 @@
 - **📄 스마트 PDF 분석**: `PyMuPDF`를 사용하여 복잡한 레이아웃의 PDF에서도 고품질 텍스트를 추출하며, `RecursiveCharacterTextSplitter`를 통해 맥락을 유지하며 청크를 분할합니다.
 - **📝 자동 퀴즈 생성 (JSON-Structured)**: Gemini 3 Flash의 구조화 출력을 활용하여 4지선다 문제, 보기, 정답, 해설을 포함한 JSON을 생성하고 파싱합니다.
 - **🤖 RAG 기반 지능형 채팅**: 사용자가 질문하면 FAISS 벡터 저장소에서 관련 문장을 검색하여 근거 있는 답변을 제공합니다.
+- **🛡️ 4계층 AI 가드레일**: 입력과 출력의 모든 단계에서 개인정보를 보호하고, 부정행위를 차단하며, 위기 상황 발생 시 상담원 연결을 지원합니다.
 - **❌ 오답 노트 및 진행 관리**: 틀린 문제를 추적하여 사이드바에 표시하고, 사용자가 다시 복습할 수 있는 환경을 제공합니다.
 
 ---
@@ -45,15 +47,20 @@ graph TD
     D --> E[(FAISS Vector DB)]
     
     subgraph Conversation_Engine
-        F[User Query] --> G{Mode Check}
-        G -- Quiz Mode --> H[Prompt for JSON Quiz]
-        G -- Q&A Mode --> I[RAG Retrieval Tool]
-        H --> J[Gemini-2.5-Flash]
-        I --> J
+        F[User Query] --> G{Guardrail Filter}
+        G -- Blocked --> K
+        G -- Passed --> H{Mode Check}
+        H -- Quiz Mode --> I[Prompt for JSON Quiz]
+        H -- Q&A Mode --> J[RAG Retrieval Tool]
+        I --> L[Gemini-2.5-Flash]
+        J --> L
+        L --> M{Output Auditor}
+        M -- Leaked --> N[Correct Response]
+        M -- Safe --> N[Standard Response]
     end
     
-    J --> K[Streamlit UI Display]
-    K --> L[st.session_state History]
+    N --> K[Streamlit UI Display]
+    K --> O[st.session_state History]
 ```
 
 ---
@@ -87,6 +94,13 @@ def parse_ai_json(ai_response):
 - **Format**: 4지선다 객관식 JSON 전용 응답
 - **Constraint**: 제공된 텍스트 컨텍스트 내에서만 문제 생성
 
+### 🛡️ 4계층 안전 시스템 (AI Guardrails)
+챗봇의 안전성과 교육적 가치를 유지하기 위해 강력한 미들웨어 계층을 구축했습니다.
+1. **Layer 1 (교육)**: "정답 알려줘", "대신 써줘" 등 학습 의욕을 저해하거나 부정행위를 유도하는 요청을 사전에 차단.
+2. **Layer 2 (개인정보)**: 전화번호, 이메일 주소 등을 정규표현식으로 감지하여 외부 모델 전송 전 자동 마스킹 처리.
+3. **Layer 3 (이관)**: "왕따", "괴롭힘", "우울해" 등 심리적 위기 상황 키워드 감지 시 AI 답변을 중지하고 전문 상담 안내를 수행.
+4. **Layer 4 (출력)**: 생성된 답변이 직접적인 정답을 포함하는지 **Auditor 모델**이 실시간 검증하여 최종 멘트를 교정.
+
 ---
 
 ## 🚀 6. 시작하기 (Getting Started)
@@ -108,11 +122,13 @@ uv run main.py
 ## 📈 7. 과정 기반 성찰 (Self-Reflection)
 
 ### ✅ 도전 과제 및 해결 (Troubleshooting)
-1. **모델 호환성 이슈**: `gemini-2.5-flash-lite`에서 `gemini-3-flash`로 업그레이드 시 임베딩 벡터 차원이 맞지 않는 문제 발생 → 로컬 FAISS 인덱스 자동 갱신 및 에러 안내 로직 추가.
+1. **모델 호환성 이슈**: `gemini-2.5-flash` 및 `gemini-embedding-001` 전환 과정에서 기존 인덱스와의 차원 불일치 대응 로직 구축.
 2. **비동기성 관리**: Streamlit의 세션 상태와 AI 에이전트의 충돌 방지를 위해 `st.cache_resource`와 세션 관리를 철저히 분리함.
+3. **런타임 임포트 및 초기화 순서**: 가드레일 미들웨어 통합 시, 모듈 임포트 시점보다 `load_dotenv()`가 늦게 실행되어 API 키 누락 에러 발생 → 호출 순서 최적화 및 Streamlit 환경에 맞는 절대 경로 임포트로 교정.
 
 ### 🚀 향후 고도화 로직
 - [ ] **RAG 고도화**: Multi-Query Retrieval 적용을 통한 검색 성능 향상.
+- [x] **상태 기반 가드레일**: 4계층 미들웨어를 통한 입출력 안전 및 교육적 가치 확보.
 - [ ] **LangGraph 통합**: 더 복잡한 에이전트 상태(State) 관리 도입.
 - [ ] **멀티모달 확장**: PDF 내 이미지를 분석하여 이미지가 포함된 퀴즈 생성.
 
@@ -122,7 +138,8 @@ uv run main.py
 - **저자**: [Your Name/Github ID]
 - **개발 기록**: [HISTORY.md](./HISTORY.md)
 - **아키텍처 가이드**: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- **가드레일 실행 계획**: [GUARDRAILS_PLAN.md](./docs/GUARDRAILS_PLAN.md)
 - **포트폴리오 체크리스트**: [PORTFOLIO_CHECKLIST.md](./PORTFOLIO_CHECKLIST.md)
 
 ---
-*최종 업데이트: 2026-04-12*
+*최종 업데이트: 2026-04-18*

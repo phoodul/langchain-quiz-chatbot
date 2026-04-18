@@ -4,6 +4,22 @@
 
 ## 📅 Build Log
 
+### [2026-04-18] 가드레일 시스템 (Guardrails) 기반 구축
+- **상황(Situation)**: 퀴즈 챗봇의 안전성, 교육적 가치 유지, 개인정보 보호를 위해 `01_guardrails.ipynb`에서 검사된 4계층 가드레일 시스템을 프로젝트에 공식 통합해야 함.
+- **결정(Action)**:
+    - [x] 가드레일용 상수 정의 (차단 키워드, 상담 이관 키워드 등)
+    - [x] 정규표현식(Regex)을 이용한 개인정보 패턴(전화번호, 이메일) 정의
+- **상세**: 
+    - `src/guardrails.py`에 4계층 미들웨어 함수 구현:
+        1. `education_guardrail`: 키워드 기반 입력 필터링 (부정행위/딴짓/유해물)
+        2. `student_safety_middleware`: Regex 기반 개인정보 마스킹 (전화번호/이메일)
+        3. `counseling_escalation_middleware`: 위기 키워드 감지 및 상담 이관 안내
+        4. `answer_leakage_guardrail`: LLM 기반 출력 검증 및 정답 유출 방지 (Auditor 모델 활용)
+- **에이전트 통합**:
+    - `src/quiz_chatbot.py`의 `initialize_agent` 함수에서 `create_agent` 호출 시 상기 4개 미들웨어를 실시간 파이프라인으로 연결.
+    - 입출력의 모든 흐름에 가드레일이 자동 적용되도록 구성.
+- **결과(Result)**: 챗봇의 모든 입출력 경로에 안전 장치가 마련되었으며, 교육적 목표에 부합하는 대화 환경 구축. 테스트 시나리오(부정행위, 개인정보 보호 등)에 대한 대응력 확보.
+
 ### [2026-04-12] 프로젝트 전체 임베딩 모델 `gemini-embedding-2-preview` 통일 및 task_type 제거
 - **상황(Situation)**: 코드에서는 `gemini-embedding-2-preview`를 사용 중이었으나, 문서 파일 6개(ARCHITECTURE.md, README.md, AGENTS.md, SKILL.md, rag_strategy.md 등)에는 여전히 `text-embedding-004`로 기재되어 코드-문서 간 불일치 발생.
 - **추가 이슈**: 공식 문서(ai.google.dev)에 따르면 `gemini-embedding-2-preview`는 `task_type` 파라미터 대신 프롬프트 기반 작업 접두사를 사용하는 것이 권장됨. 기존 코드의 `task_type="RETRIEVAL_DOCUMENT"` 설정이 API 호환성 문제를 유발할 가능성 확인.
