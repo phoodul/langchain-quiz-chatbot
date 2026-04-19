@@ -4,7 +4,61 @@
 
 ## 📅 Build Log
 
+### [2026-04-19] 멀티 에이전트 아키텍처(Multi-Agent) 통합 및 UI 연동 완료
+- **상황(Situation)**: 설계된 멀티 에이전트 구조를 실제 애플리케이션에 통합하고, 사용자의 의도를 자동으로 분석하는 지능형 워크플로우를 완성해야 함.
+- **결정(Action)**:
+    - [x] **Phase 3 (안전성 강화)**: `src/agents/auditor.py` 구현. 최종 응답의 교육적 적절성 및 정답 유출 여부를 전담 검수하는 Auditor 노드 추가.
+    - [x] **Phase 3 (오케스트레이션)**: `src/graph.py`에 Auditor 노드 연결 및 최종 워크플로우 그래프 컴파일 (`Router -> Agent -> Auditor -> END`).
+    - [x] **Phase 4 (UI 연동)**: `src/quiz_chatbot.py`를 전면 리팩토링하여 LangGraph `app.invoke()` 기반으로 전환.
+    - [x] **상태 동기화**: Streamlit 세션 상태와 LangGraph `AgentState` 간의 양방향 메시지 및 데이터 동기화 로직 구현.
+- **결과(Result)**: 
+    - 사용자가 수동으로 모드를 바꿀 필요 없이 "문제 내줘", "이건 무슨 뜻이야?" 등의 대화만으로 AI가 스스로 적절한 에이전트(Quiz Master, Study Tutor 등)를 호출함.
+    - 모든 답변은 Auditor를 거쳐 교육적 목적에 부합하게 정제되어 출력됨.
+    - 코드의 유지보수성과 확장성이 대폭 향상됨.
+
+### [2026-04-19] 멀티 에이전트 고도화: 오답 기반 티칭 및 에러 핸들링 보강
+- **상황(Situation)**: 퀴즈 풀이 후 학생의 학습 결손을 메우기 위한 심화 학습 연계 과정이 부족했으며, 숫자 답변 라우팅 최적화가 필요했음.
+- **결정(Action)**:
+    - [x] **Study Tutor 노드 강화**: `wrong_answers` 데이터를 문맥에 주입하여, 학생이 틀린 문제의 핵심 개념을 중심으로 답변하도록 프롬프트 고도화.
+    - [x] **Quiz Master 전환 유도**: 오답 시 해설과 함께 "더 설명해줘"라고 질문하도록 자연스러운 모드 전환 유도 문구 삽입.
+    - [x] **Router 최적화**: 이전 단계에서 구현한 Numeric Routing 로직 최종 검증.
+- **결과(Result)**: 
+    - 퀴즈(출제/채점) -> 학습(심화 설명) -> 상담(격려)으로 이어지는 '선순환 학습 워크플로우' 완성.
+    - 데이터 기반의 맞춤형 학습 피드백이 가능해져 포트폴리오의 기술적 깊이 향상.
+
+### [2026-04-19] 멀티모달(Multimodal) 확장: 이미지 기반 퀴즈 엔진 구축
+- **상황(Situation)**: 텍스트 기반 PDF 분석을 넘어, 도표나 수식 등 이미지가 중심이 되는 학습 자료에 대응하기 위한 멀티모달 기능 필요.
+- **결정(Action)**:
+    - [x] **UI 확장**: PNG, JPG 이미지 업로드 및 base64 인코딩 처리 로직 추가.
+    - [x] **Agent State 확장**: 이미지 데이터를 에이전트 간 전달할 수 있도록 `image_context` 필드 도입.
+    - [x] **멀티모달 에이전트**: `Quiz Master`와 `Study Tutor` 노드에 Gemini 비전(Vision) 기능을 통합하여 이미지 내 시각 정보 기반 답변 및 퀴즈 생성 구현.
+- **결과(Result)**: 
+    - 교과서 사진, 복잡한 다이어그램 등을 업로드하여 즉석에서 설명을 듣고 관련 문제를 풀 수 있는 차세대 AI 학습 환경 구축.
+    - 텍스트와 이미지를 동시에 분석하는 강력한 멀티 에이전트 파이프라인 완성.
+
+### [2026-04-19] 트러블슈팅: schema.py 임포트 오류(NameError) 해결
+- **상황(Situation)**: 멀티모달 기능 추가 후 `uv run main.py` 실행 시 `NameError: name 'Optional' is not defined` 발생하며 앱 크래시.
+- **원인(Cause)**: `src/schema.py` 파일 내 `image_context` 필드 정의 시 `Optional` 타입을 사용했으나, 상단 `typing` 임포트 문에서 `Optional`이 누락됨.
+- **결정(Action)**: `from typing import ...` 구문에 `Optional`을 추가하여 임포트 오류 해결.
+- **결과(Result)**: 앱이 정상적으로 실행되며 이미지 업로드 및 분석 기능이 활성화됨.
+
+### [2026-04-19] 트러블슈팅: IndexError(list index out of range) 해결
+- **상황(Situation)**: PDF 학습 시작 시 `invoke_chatbot` 호출 과정에서 `IndexError: list index out of range` 발생.
+- **원인(Cause)**: `invoke_chatbot` 함수가 `st.session_state.messages`가 비어 있을 때 호출되면서, `Router` 노드가 빈 메시지 리스트의 마지막 인덱스(`[-1]`)에 접근하여 발생한 문제.
+- **결정(Action)**:
+    - `src/quiz_chatbot.py`: `invoke_chatbot` 실행 전 `current_state`에 현재 사용자 입력(`user_input`)을 강제로 포함시키도록 로직 수정.
+    - `src/agents/router.py`: 메시지 리스트가 비어 있을 경우를 대비한 방어 로직(Early return) 추가.
+- **결과(Result)**: 초기 학습 시작 메시지 및 빈 세션 상태에서도 에러 없이 그래프 워크플로우가 정상 작동함.
+
+#### 🚀 향후 작업 (TODO List)
+1.  **Phase 6 (최종 마무리)**:
+    - [ ] Streamlit Community Cloud 배포 및 API 보안 설정 (Secrets 관리).
+    - [ ] 실제 학생 환경에서의 지연 시간(Latency) 최적화.
+    - [ ] 오답 노트 데이터의 시각화 (그래프/차트) 기능 검토.
+
+
 ### [2026-04-18] 가드레일 시스템 (Guardrails) 기반 구축
+
 - **상황(Situation)**: 퀴즈 챗봇의 안전성, 교육적 가치 유지, 개인정보 보호를 위해 `01_guardrails.ipynb`에서 검사된 4계층 가드레일 시스템을 프로젝트에 공식 통합해야 함.
 - **결정(Action)**:
     - [x] 가드레일용 상수 정의 (차단 키워드, 상담 이관 키워드 등)

@@ -10,17 +10,14 @@ import tempfile
 import os
 import json
 import re
+import base64
 from dotenv import load_dotenv
 
 # .env 파일 로드 (모듈 임포트 전 실행)
 load_dotenv()
 
-from guardrails import (
-    education_guardrail,
-    student_safety_middleware,
-    counseling_escalation_middleware,
-    answer_leakage_guardrail
-)
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from src.graph import app as graph_app
 
 # --- [초기 설정] ---
 # 모델 초기화 (누락된 chat 객체 추가)
@@ -48,7 +45,9 @@ if "vectorstore" not in st.session_state:
 if "agent" not in st.session_state:
     st.session_state.agent = None
 if "mode" not in st.session_state:
-    st.session_state.mode = "퀴즈 풀기"
+    st.session_state.mode = "관찰 중" # Router가 판단하도록 함
+if "image_context" not in st.session_state:
+    st.session_state.image_context = None
 
 
 # --- [유틸리티 함수: 스캐폴딩 제공] ---
@@ -131,111 +130,45 @@ def search_pdf_documents(query: str) -> str:
     return "검색할 문서가 없습니다."
 
 
-def initialize_agent() -> None:
-    # (주의: search_pdf_documents 등은 scaffold의 전역 변수 활용 가정)
-    system_prompt = """당신은 업로드된 PDF 문서를 바탕으로 학습을 돕는 교육 전문가입니다.
-    1. 사용자의 질문에 대해 'search_pdf_documents' 도구를 사용하여 정확한 정보를 찾으세요.
-    2. 답변은 반드시 검색된 문서의 내용에만 기반하여 한국어로 작성하세요.
-    3. 문서에 관련 내용이 없다면 억지로 꾸며내지 말고 솔직하게 모른다고 답변하세요.
-    """
-
-    st.session_state.agent = create_agent(
-        model="google_genai:gemini-2.5-flash",
-        tools=[search_pdf_documents],
-        system_prompt=system_prompt,
-        middleware=[
-            education_guardrail,
-            student_safety_middleware,
-            counseling_escalation_middleware,
-            answer_leakage_guardrail
-        ]
-    )
-
-
-def general_response(user_message: str) -> str:
-    """에이전트를 통한 일반 대화"""
-    if st.session_state.agent:
-        history = [
-            {"role": m["role"], "content": m["content"]}
-            for m in st.session_state.messages[-5:]
-        ]
-        # 에이전트 실행
-        result = st.session_state.agent.invoke(
-            {"messages": history + [{"role": "user", "content": user_message}]}
-        )
-
-        # 마지막 AI 메시지 추출
-        ai_msg = result["messages"][-1]
-        content = ai_msg.content
-
-        # 응답이 리스트 형태(구조화된 데이터)인 경우 텍스트 블록만 추출
-        if isinstance(content, list):
-            text_parts = [
-                part.get("text", "")
-                for part in content
-                if isinstance(part, dict) and part.get("type") == "text"
-            ]
-            return "".join(text_parts)
-
-        return content
-    return "에이전트가 설정되지 않았습니다."
-
-
-def question_generator() -> dict | None:
-    # (주의: chat, st.session_state.pdf_context 등은 scaffold의 전역/세션 변수 활용 가정)
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """당신은 제공된 텍스트에서 4지선다 객관식 문제를 생성하는 교육용 AI입니다.
-        반드시 다음 JSON 형식으로만 응답하세요:
-        {{
-            "question": "문제 내용",
-            "options": ["1. 보기1", "2. 보기2", "3. 보기3", "4. 보기4"],
-            "answer": "정답 번호 (1~4)",
-            "explanation": "해설"
-        }}
-        
-        텍스트: {context}""",
-            ),
-            ("human", "문제를 1개 생성해 주세요."),
-        ]
-    )
-
-    chain = prompt | chat
-    ai_response = chain.invoke({"context": st.session_state.pdf_context})
-    content = ai_response.content
-
-    # 리스트 형태(구조화된 데이터)일 경우 텍스트 부분만 합치기
-    if isinstance(content, list):
-        content = "".join(
-            [
-                part.get("text", "")
-                for part in content
-                if isinstance(part, dict) and part.get("type") == "text"
-            ]
-        )
-
-    # Scaffold에 제공된 parse_ai_json 함수를 사용하여 JSON 추출 및 결과 반환
-    return parse_ai_json(content)
-
-
-def check_answer(user_message: str) -> str | None:
-    """사용자가 입력한 숫자가 정답인지 확인"""
-    q_data = st.session_state.current_question
-    if not q_data:
-        return None
-    try:
-        user_ans = int(user_message.strip())
-        correct_ans = int(q_data["answer"])
-        if user_ans == correct_ans:
-            return "정답입니다! 🎉"
+def convert_to_langgraph_messages(streamlit_messages):
+    """Streamlit 메시지 형식을 LangGraph 메시지 객체로 변환합니다."""
+    lg_messages = []
+    for m in streamlit_messages:
+        if m["role"] == "user":
+            lg_messages.append(HumanMessage(content=m["content"]))
         else:
-            if q_data not in st.session_state.wrong_answers:
-                st.session_state.wrong_answers.append(q_data)
-            return f"오답입니다. 정답은 {correct_ans}번입니다.\n\n해설: {q_data['explanation']}"
-    except ValueError:
-        return None
+            lg_messages.append(AIMessage(content=m["content"]))
+    return lg_messages
+
+def invoke_chatbot(user_input: str):
+    """LangGraph를 통해 에이전트 워크플로우를 실행합니다."""
+    # 1. 메시지 목록 구성 (사용자 입력 추가)
+    messages = convert_to_langgraph_messages(st.session_state.messages)
+    messages.append(HumanMessage(content=user_input))
+    
+    current_state = {
+        "messages": messages,
+        "pdf_context": st.session_state.pdf_context,
+        "current_mode": "auto", # Router가 판단하도록 설정
+        "current_question": st.session_state.current_question,
+        "wrong_answers": st.session_state.wrong_answers,
+        "image_context": st.session_state.image_context
+    }
+    
+    # 2. 그래프 실행
+    with st.spinner("에이전트들이 협업 중..."):
+        # LangGraph invoke 실행
+        result = graph_app.invoke(current_state)
+    
+    # 3. 결과 상태 업데이트 (동기화)
+    # 마지막 AI 응답 가져오기
+    last_ai_msg = result["messages"][-1].content
+    
+    st.session_state.current_question = result.get("current_question")
+    st.session_state.wrong_answers = result.get("wrong_answers", [])
+    st.session_state.mode = result.get("current_mode", "관찰 중")
+    
+    return last_ai_msg
 
 
 # --- Streamlit UI 시작 ---
@@ -243,12 +176,8 @@ st.title("📖 PDF AI 퀴즈 챗봇")
 
 # 사이드바 설정 영역
 with st.sidebar:
-    st.header("⚙️ 설정")
-    st.session_state.mode = st.radio(
-        "학습 모드 선택",
-        ["퀴즈 풀기", "질문하기"],
-        help="퀴즈를 풀며 학습하거나, 문서에 대해 자유롭게 질문하세요.",
-    )
+    st.info(f"📍 현재 모드: **{st.session_state.mode}**")
+    st.write("에이전트가 대화 맥락에 따라 모드를 자동으로 전환합니다.")
 
     if st.session_state.wrong_answers:
         st.write("---")
@@ -257,31 +186,35 @@ with st.sidebar:
             st.session_state.wrong_answers = []
             st.rerun()
 
-uploaded_file = st.file_uploader("PDF 파일을 업로드하세요", type="pdf")
+uploaded_file = st.file_uploader("학습 자료(PDF 또는 이미지)를 업로드하세요", type=["pdf", "png", "jpg", "jpeg"])
 if st.button("학습 시작") and uploaded_file:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-        tmp_file.write(uploaded_file.read())
-        tmp_path = tmp_file.name
+    file_extension = uploaded_file.name.split(".")[-1].lower()
+    
+    if file_extension == "pdf":
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_path = tmp_file.name
 
-    with st.spinner("문서를 분석 중..."):
-        load_and_parse_pdf(tmp_path)
-        initialize_agent()
-        st.session_state.pdf_processed = True
-
-        if st.session_state.mode == "퀴즈 풀기":
-            q = question_generator()
-            st.session_state.current_question = q
-            if q:
-                msg = q["question"] + "\n\n" + "\n".join(q["options"])
-                st.session_state.messages.append({"role": "assistant", "content": msg})
-        else:
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": "문서 분석이 완료되었습니다! 분석된 내용에 대해 무엇이든 물어보세요.",
-                }
-            )
-    os.unlink(tmp_path)
+        with st.spinner("PDF 문서를 분석 중..."):
+            load_and_parse_pdf(tmp_path)
+            st.session_state.pdf_processed = True
+            st.session_state.image_context = None # PDF 모드일 때는 이미지 제거
+            
+            resp = invoke_chatbot("안녕! 업로드한 PDF 파일로 공부를 도와줘.")
+            st.session_state.messages.append({"role": "assistant", "content": resp})
+        os.unlink(tmp_path)
+    else:
+        # 이미지 처리
+        with st.spinner("이미지 분석 중..."):
+            image_bytes = uploaded_file.read()
+            encoded_image = base64.b64encode(image_bytes).decode('utf-8')
+            st.session_state.image_context = encoded_image
+            st.session_state.pdf_context = "" # 이미지 모드일 때는 텍스트 컨텍스트 초기화
+            st.session_state.pdf_processed = True
+            
+            st.image(image_bytes, caption="업로드된 이미지", use_container_width=True)
+            resp = invoke_chatbot("이 이미지의 내용을 바탕으로 문제를 내주거나 설명해줘.")
+            st.session_state.messages.append({"role": "assistant", "content": resp})
 
 # 대화 창 출력
 for msg in st.session_state.messages:
@@ -300,35 +233,6 @@ if prompt := st.chat_input("메시지를 입력하세요"):
         st.write(prompt)
 
     with st.chat_message("assistant"):
-        if st.session_state.mode == "퀴즈 풀기":
-            # 퀴즈 모드: 사용자 정답 체크
-            ans_check = check_answer(prompt)
-            if ans_check:
-                st.write(ans_check)
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": ans_check}
-                )
-                # 다음 문제 출제
-                with st.spinner("다음 문제를 생성 중..."):
-                    new_q = question_generator()
-                    st.session_state.current_question = new_q
-                    if new_q:
-                        msg = new_q["question"] + "\n\n" + "\n".join(new_q["options"])
-                        st.write("---")
-                        st.write(msg)
-                        st.session_state.messages.append(
-                            {"role": "assistant", "content": msg}
-                        )
-            else:
-                # 입력이 번호가 아닌 경우 가이드 출력
-                guide = "퀴즈 풀기 모드입니다. 정답 번호(1~4)를 입력해 주세요. 문질문에 답변을 듣고 싶다면 사이드바에서 '질문하기' 모드로 변경해 주세요."
-                st.info(guide)
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": guide}
-                )
-        else:
-            # 질문하기 모드: 에이전트를 통한 일반 답변 생성
-            with st.spinner("답변을 찾는 중..."):
-                resp = general_response(prompt)
-                st.write(resp)
-                st.session_state.messages.append({"role": "assistant", "content": resp})
+        resp = invoke_chatbot(prompt)
+        st.write(resp)
+        st.session_state.messages.append({"role": "assistant", "content": resp})
